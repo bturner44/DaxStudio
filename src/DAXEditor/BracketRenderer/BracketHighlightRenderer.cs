@@ -1,6 +1,6 @@
 ﻿// This code was largely "borrowed" from http://edi.codeplex.com
 
-namespace DAXEditor.BracketRenderer
+namespace DAXEditorControl.BracketRenderer
 {
   using System;
   using System.Collections.Generic;
@@ -19,12 +19,12 @@ namespace DAXEditor.BracketRenderer
     BracketSearchResult result;
     Pen borderPen;
     Brush backgroundBrush;
-    TextView textView;
+    readonly TextView textView;
 
     //public static readonly Color DefaultBackground = Color.FromArgb(100, 0, 0, 255);
     public static readonly Color DefaultBackground = Color.FromArgb(200, 255, 200, 0);
     public static readonly Color DefaultBorder = Color.FromArgb(128, 255, 0, 0);
-    public static readonly Color InvalidBackground = Color.FromArgb(200, 255, 90, 90);
+    public static readonly Color InvalidBackground = Color.FromArgb(150, 255, 90, 90);
 
     public const string BracketHighlight = "Bracket highlight";
     #endregion fields
@@ -32,10 +32,7 @@ namespace DAXEditor.BracketRenderer
     #region constructor
     public BracketHighlightRenderer(TextView textView)
     {
-      if (textView == null)
-        throw new ArgumentNullException("textView");
-
-      this.textView = textView;
+      this.textView = textView ?? throw new ArgumentNullException(nameof(textView));
 
       this.textView.BackgroundRenderers.Add(this);
     }
@@ -70,13 +67,19 @@ namespace DAXEditor.BracketRenderer
 
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
+      //check arguments are valid
+      if (textView == null) throw new ArgumentNullException(nameof(textView));
+      if (drawingContext == null) throw new ArgumentNullException(nameof(drawingContext));
+
       if (this.result == null)
         return;
 
-      BackgroundGeometryBuilder builder = new BackgroundGeometryBuilder();
-
-      builder.CornerRadius = 1;
-      builder.AlignToMiddleOfPixels = true;
+      BackgroundGeometryBuilder builder = new BackgroundGeometryBuilder
+      {
+        CornerRadius = 1,
+        AlignToWholePixels = true,
+        BorderThickness = 1
+      };
 
       builder.AddSegment(textView, new TextSegment() { StartOffset = result.OpeningBracketOffset, Length = result.OpeningBracketLength });
       builder.CloseFigure(); // prevent connecting the two segments
@@ -100,7 +103,7 @@ namespace DAXEditor.BracketRenderer
       }
     }
 
-    public static void ApplyCustomizationsToRendering(BracketHighlightRenderer renderer, IEnumerable<Color> customizations)
+    internal static void ApplyCustomizationsToRendering(BracketHighlightRenderer renderer, IEnumerable<Color> customizations)
     {
       renderer.UpdateColors(DefaultBackground, DefaultBorder);
 

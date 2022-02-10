@@ -1,177 +1,174 @@
-﻿using DaxStudio.Interfaces;
-using DaxStudio.UI.Model;
+﻿using DaxStudio.Common;
+using DaxStudio.Interfaces;
+using DaxStudio.UI.Extensions;
+using DaxStudio.UI.Interfaces;
+using Serilog;
 using System;
-using System.Collections.Generic;
 using System.ComponentModel.Composition;
-using System.Data;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Windows;
 
 namespace DaxStudio.UI.Model
 {
     [Export(typeof(IResultsTarget))]
     public class ResultsTargetTextFile : IResultsTarget
     {
-        public string Name
-        {
-            get { return "File"; }
-        }
-        public string Group
-        {
-            get { return "Standard"; }
-        }
+        #region Standard Properties
+        public string Name => "File";
+        public string Group => "Standard";
+        public bool IsDefault => false;
+        public bool IsAvailable => true;
+        public int DisplayOrder => 200;
+        public string Message => "Results will be sent to a Text File";
+        public OutputTarget Icon => OutputTarget.File;
+        public string Tooltip => "Exports Query results to csv or tab delimited files";
+        public bool IsEnabled => true;
 
-        public string MyProperty { get; set; }
+        public string DisabledReason => "";
+        #endregion
 
-        public Task OutputResultsAsync(IQueryRunner runner)
+        public async Task OutputResultsAsync(IQueryRunner runner, IQueryTextProvider textProvider)
         {
 
             var dlg = new Microsoft.Win32.SaveFileDialog
             {
-                DefaultExt = ".txt",
-                Filter = "Tab separated text file|*.txt|Comma separated text file - UTF8|*.csv|Comma separated text file - Unicode|*.csv"
+                DefaultExt = ".csv",
+                Filter = "Comma separated text file - UTF8|*.csv|Tab separated text file|*.txt|Comma separated text file - Unicode|*.csv|Custom Export Format (Configure in Options)|*.csv"
             };
 
             string fileName = "";
-
+            long durationMs = 0;
             // Show save file dialog box
             var result = dlg.ShowDialog();
-            
 
             // Process save file dialog box results 
             if (result == true)
             {
                 // Save document 
                 fileName = dlg.FileName;
-        
-                return Task.Factory.StartNew(() =>
+                await Task.Run(() =>
                 {
 
                     try
                     {
                         runner.OutputMessage("Query Started");
+
                         var sw = Stopwatch.StartNew();
+
                         string sep = "\t";
+                        bool shouldQuoteStrings = true; //default to quoting all string fields
                         string decimalSep = System.Globalization.CultureInfo.CurrentUICulture.NumberFormat.CurrencyDecimalSeparator;
-                        string isoDateFormat = string.Format("yyyy-MM-dd hh:mm:ss{0}000", decimalSep);
-                        Encoding enc = Encoding.UTF8;
+                        string isoDateFormat = string.Format(Constants.IsoDateMask, decimalSep);
+                        Encoding enc = new UTF8Encoding(false);
+
                         switch (dlg.FilterIndex)
-                        { 
-                            case 1:
-                                enc = Encoding.UTF8;
-                                sep = System.Globalization.CultureInfo.CurrentUICulture.TextInfo.ListSeparator;
-                                break;
-                            case 2:
-                                enc = Encoding.Unicode;
-                                sep = System.Globalization.CultureInfo.CurrentUICulture.TextInfo.ListSeparator;
-                                break;
-                        } 
-
-                        var dq = runner.QueryText;
-                        var res = runner.ExecuteQuery(dq);
-                        if (res != null)
                         {
-                            sw.Stop();
-                            var durationMs = sw.ElapsedMilliseconds;
-                            runner.ResultsTable = res;
-                            runner.OutputMessage(
-                                string.Format("Query Completed ({0:N0} row{1} returned)", res.Rows.Count,
-                                                res.Rows.Count == 1 ? "" : "s"), durationMs);
-
-                            var sbLine = new StringBuilder();
-                            using (var writer = new StreamWriter(File.Open(fileName, FileMode.Create), enc))
-                            {
-                                // write out column headers
-                                IEnumerable<string> columnNames = res.Columns.Cast<DataColumn>().
-                                                                    Select(column => column.ColumnName);
-                                writer.WriteLine(string.Join(sep, columnNames));
-                                
-                                string[] columnTypes = res.Columns.Cast<DataColumn>().
-                                                                    Select(column => column.DataType.ToString()).ToArray();
-                                int iCol = 0;
-                                int iColCnt = res.Columns.Count;
-                                // write out data
-                                foreach (DataRow row in res.Rows)
-                                {
-                                    iCol = 0;
-                                    foreach (var col in row.ItemArray)
-                                    {
-                                        switch(columnTypes[iCol] )
-                                        {
-                                            case "System.Decimal":
-                                            case "System.Int64":
-                                                sbLine.Append(col.ToString());
-                                                break;
-                                            case "System.DateTime":
-                                                //sbLine.Append("\"");
-                                                //sbLine.Append(((DateTime)col).ToString( "s", System.Globalization.CultureInfo.InvariantCulture )); // ISO date format
-                                                sbLine.Append(((DateTime)col).ToString( isoDateFormat)); // ISO date format
-                                                //sbLine.Append("\"");
-                                                break;
-                                            default:
-                                                sbLine.Append("\"");
-                                                sbLine.Append(col.ToString().Replace("\"", "\"\"").Replace("\n"," "));
-                                                sbLine.Append("\"");
-                                                break;
-                                        }
-
-                                        iCol++;
-                                        if (iCol < iColCnt)
-                                        { sbLine.Append(sep); }
-                                    }
-                                    writer.WriteLine(sbLine);
-                                    sbLine.Clear();
-                                    //IEnumerable<string> fields = row.ItemArray.Select(field => string.Concat("\"", field.ToString().Replace("\"", "\"\"").Replace("\n"," "), "\""));
-                                    //writer.WriteLine(string.Join(sep, fields));
-                                }
-                            }
-
-                            runner.SetResultsMessage("Query results written to file", OutputTargets.Grid);
-                            //runner.QueryCompleted();
-                            runner.ActivateOutput();
+                            
+                            case 1: // utf-8 csv
+                                sep = System.Globalization.CultureInfo.CurrentUICulture.TextInfo.ListSeparator;
+                                break;
+                            case 2: // tab separated
+                                sep = "\t";
+                                break;
+                            case 3: // unicode csv
+                                enc = new UnicodeEncoding();
+                                sep = System.Globalization.CultureInfo.CurrentUICulture.TextInfo.ListSeparator;
+                                break;
+                            case 4:// custom export format
+                                sep = runner.Options.GetCustomCsvDelimiter();
+                                shouldQuoteStrings = runner.Options.CustomCsvQuoteStringFields;
+                                break;
                         }
 
+                        var daxQuery = textProvider.QueryText;
+                        var reader = runner.ExecuteDataReaderQuery(daxQuery,textProvider.ParameterCollection);
+
+                        using (var statusProgress = runner.NewStatusBarMessage("Starting Export"))
+                        {
+
+                            try
+                            {
+                                if (reader != null)
+                                {
+                                    int iFileCnt = 1;
+                                    
+
+                                    runner.OutputMessage("Command Complete, writing output file");
+
+                                    bool moreResults = true;
+
+                                    while (moreResults)
+                                    {
+                                        var outputFilename = fileName;
+                                        int iRowCnt = 0;
+                                        if (iFileCnt > 1) outputFilename = AddFileCntSuffix(fileName, iFileCnt);
+                                        using (var textWriter = new System.IO.StreamWriter(outputFilename, false, enc))
+                                        {
+                                            iRowCnt = reader.WriteToStream( textWriter, sep, shouldQuoteStrings, isoDateFormat,  statusProgress);
+                                        }
+                                        runner.OutputMessage(
+                                                string.Format("Query {2} Completed ({0:N0} row{1} returned)"
+                                                            , iRowCnt
+                                                            , iRowCnt == 1 ? "" : "s", iFileCnt)
+                                                );
+
+                                        runner.RowCount = iRowCnt;
+
+                                        moreResults = reader.NextResult();
+
+                                        iFileCnt++;
+                                    }
+
+                                    sw.Stop();
+                                    durationMs = sw.ElapsedMilliseconds;
+
+                                    runner.SetResultsMessage("Query results written to file", OutputTarget.File);
+                                    runner.ActivateOutput();
+                                }
+                                else
+                                    runner.OutputError("Query Batch Completed with errors listed above (you may need to scroll up)", durationMs);
+                            }
+                            finally
+                            {
+                                if (reader != null)
+                                {
+                                    reader.Dispose();
+                                }
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
+                        Log.Error(ex, Common.Constants.LogMessageTemplate, nameof(ResultsTargetTextFile), nameof(OutputResultsAsync), ex.Message);
                         runner.ActivateOutput();
                         runner.OutputError(ex.Message);
+#if DEBUG
+                        runner.OutputError(ex.StackTrace);
+#endif
+                    }
+                    finally
+                    {
+                        runner.OutputMessage("Query Batch Completed", durationMs);
+                        runner.QueryCompleted();
                     }
 
                 });
-                
+
             }
-            return Task.Factory.StartNew(() => { });
+            // else dialog was cancelled so return an empty task.
+            await Task.Run(() => { });
         }
 
-        public bool IsDefault
-        {
-            get { return false; }
-        }
+       
 
-        public bool IsEnabled
+        private string AddFileCntSuffix(string fileName, int iFileCnt)
         {
-            get { return true; }
-        }
-
-        public int DisplayOrder
-        {
-            get { return 300; }
-        }
-
-
-        public string Message
-        {
-            get { return "Results will be sent to a Text File"; }
-        }
-
-        public OutputTargets Icon
-        {
-            get { return OutputTargets.File; }
+            FileInfo fi = new FileInfo(fileName);
+            var newName = string.Format("{0}\\{1}_{2}{3}", fi.DirectoryName.TrimEnd('\\'), fi.Name.Substring(0, fi.Name.Length - fi.Extension.Length), iFileCnt, fi.Extension);
+            return newName;
         }
     }
 }

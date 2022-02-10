@@ -2,9 +2,10 @@
 using System.ComponentModel.Composition;
 using System.Threading.Tasks;
 using DaxStudio.Interfaces;
-using DaxStudio.UI.Model;
-using DaxStudio.UI.Events;
 using System.Diagnostics;
+using DaxStudio.UI.Interfaces;
+using System.Data;
+using Serilog;
 
 namespace DaxStudio.UI.Model
 {
@@ -19,147 +20,71 @@ namespace DaxStudio.UI.Model
         {
             _host = host;
         }
-        public string Name {get { return "Static"; }
-        }
-        public string Group {get { return "Excel"; }
-        }
 
-        /*
-        public void OutputResults(IQueryRunner runner)
+        #region Standard Properties
+        public string Name => "Static";
+        public string Group => "Excel";
+        public bool IsDefault => false;
+        public bool IsAvailable => _host.IsExcel;
+        public int DisplayOrder => 310;
+        public string Message => "Static Results will be sent to Excel";
+        public OutputTarget Icon => OutputTarget.Static;
+        public string Tooltip => "Sends a copy of the results to Excel";
+        public bool IsEnabled => true;
+
+        public string DisabledReason => "";
+        #endregion
+
+        public async Task OutputResultsAsync(IQueryRunner runner, IQueryTextProvider textProvider)
         {
-
-            Task.Factory.StartNew(() =>
-            {
-                try
-                {
-                    runner.ResultsTable = null;
-                    runner.OutputMessage("Query Started");
-                    var sw = Stopwatch.StartNew();
-
-                    var dq = runner.QueryText;
-                    var res = runner.ExecuteQuery(dq);
-
-                    using (runner.NewStatusBarMessage("Executing Query..."))
-                    {
-                        sw.Stop();
-                        var durationMs = sw.ElapsedMilliseconds;
-
-                        runner.Host.Proxy.OutputStaticResultAsync(res, runner.SelectedWorksheet).ContinueWith((ascendant) =>
-                        {
-                            //runner.ResultsTable = res;
-                            runner.OutputMessage(
-                                string.Format("Query Completed ({0:N0} row{1} returned to Excel ({2}))", res.Rows.Count,
-                                              res.Rows.Count == 1 ? "" : "s", runner.SelectedWorksheet) , durationMs);
-                            runner.ActivateOutput();
-                            runner.SetResultsMessage("Static results sent to Excel", "Excel");
-                            runner.QueryCompleted();
-                        });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    runner.ActivateOutput();
-                    runner.OutputError(ex.Message);
-                }
-            });
-            //
-
-            //try
-            //{
-            //    runner.OutputMessage("Query Started");
-            //    var start = DateTime.Now;
-                
-            //    var dq = runner.QueryText;
-            //    runner.ExecuteQueryAsync(dq).ContinueWith((antecendant) => 
-            //        {
-            //            var end = DateTime.Now;
-            //            var durationMs = (end - start).TotalMilliseconds;
-            //            var res = antecendant;
-
-            //            // TODO write results to Excel
-            //            await runner.Host.Proxy.OutputStaticResultAsync(res, runner.SelectedWorksheet).ContinueWith(() =>
-            //            {
-            //                //runner.ResultsTable = res;
-
-            //                runner.OutputMessage(
-            //                    string.Format("Query Completed ({0:N0} row{1} returned)", res.Rows.Count,
-            //                                  res.Rows.Count == 1 ? "" : "s"), durationMs);
-            //                runner.ActivateResults();
-            //                runner.QueryCompleted();
-            //            });
-            //        },TaskScheduler.FromCurrentSynchronizationContext());
-            //}
-            //catch (Exception ex)
-            //{
-            //    runner.ActivateOutput();
-            //    runner.OutputError(ex.Message);
-            //}
-            //
-        }
-    */
-        public Task OutputResultsAsync(IQueryRunner runner)
-        {
-            return Task.Factory.StartNew(() =>
+            await Task.Run(async () =>
                 {
                     try
                     {
                         runner.OutputMessage("Query Started");
                         var sw = Stopwatch.StartNew();
 
-                        var dq = runner.QueryText;
-                        var res = runner.ExecuteQuery(dq);
+                        var dq = textProvider.QueryText;
+
+                        DataTable res = await runner.ExecuteDataTableQueryAsync(dq);
+
+                        if (res == null || res.Rows?.Count == 0)
+                        {
+                            Log.Warning("{class} {method} {message}", nameof(ResultsTargetExcelStatic), nameof(OutputResultsAsync), "Query Result DataTable has no rows");
+                            runner.ActivateOutput();
+                            runner.OutputWarning("Unable to send results to Excel as there are no rows in the result set");
+                            return;
+                        }
 
                         sw.Stop();
                         var durationMs = sw.ElapsedMilliseconds;
 
-
                         // write results to Excel
-                        runner.Host.Proxy.OutputStaticResultAsync(res, runner.SelectedWorksheet).ContinueWith((ascendant) => {
-                            runner.OutputMessage(
-                                string.Format("Query Completed ({0:N0} row{1} returned)", res.Rows.Count,
-                                              res.Rows.Count == 1 ? "" : "s"), durationMs);
-                            runner.ActivateOutput();
-                            runner.SetResultsMessage("Static results sent to Excel", OutputTargets.Static);
-                            runner.QueryCompleted();
-                        });
+                        await runner.Host.Proxy.OutputStaticResultAsync(res, runner.SelectedWorksheet); //.ContinueWith((ascendant) => {
+                        
+                        runner.OutputMessage(
+                            string.Format("Query Completed ({0:N0} row{1} returned)", res.Rows.Count,
+                                            res.Rows.Count == 1 ? "" : "s"), durationMs);
+                        runner.RowCount = res.Rows.Count;
+                        runner.ActivateOutput();
+                        runner.SetResultsMessage("Static results sent to Excel", OutputTarget.Static);
+                        //},TaskScheduler.Default);
                     }
                     catch (Exception ex)
                     {
+                        Log.Error(ex, "{class} {method} {message}", nameof(ResultsTargetExcelStatic), nameof(OutputResultsAsync), ex.Message);
                         runner.ActivateOutput();
                         runner.OutputError(ex.Message);
+                    }
+                    finally
+                    {
+                        runner.QueryCompleted();
                     }
                 });
         }
 
 
-        public bool IsDefault
-        {
-            get { return false; }
-        }
 
-        public bool IsEnabled
-        {
-            get { return _host.IsExcel; }
-        }
-        public int DisplayOrder
-        {
-            get { return 110; }
-        }
-
-
-        public string Message
-        {
-            get {
-            return "Static Results will be sent to Excel";
-            }
-        }
-        public OutputTargets Icon
-        {
-            get
-            {
-                return OutputTargets.Static;
-            }
-        }
     }
 
 

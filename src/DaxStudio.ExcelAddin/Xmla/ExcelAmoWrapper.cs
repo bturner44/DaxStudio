@@ -41,22 +41,13 @@ namespace DaxStudio.ExcelAddin.Xmla
                 {
                     if (m_excelAmoAssembly == null)
                     {
-//                        try
-//                        {
-                            m_excelAmoAssembly = Assembly.LoadFrom(ExcelAdomdClientAssemblyPath);
-//                        }
-//                        catch (Exception ex)
-//                        {    
-//                            Log.Verbose("{Class} {Method} {message}", "ExcelAmoWrapper", "ExcelAmoAssembly", "Attempting hack of loading Microsoft.AnalysisServices");
-//                            //TODO - Hack to try to get Excel 2010 working 
-//                            m_excelAmoAssembly = Assembly.LoadFrom(AssemblyDirectory + "\\Microsoft.Excel.Amo.dll");
-//                        }
+                        m_excelAmoAssembly = Assembly.LoadFrom(ExcelAdomdClientAssemblyPath);
                     }
                     return m_excelAmoAssembly;
                 }
                 catch (Exception e)
                 {
-                    throw new Exception(string.Format("Error loading AMO from '{0}'", ExcelAdomdClientAssemblyPath));
+                    throw new Exception($"Error loading AMO from '{ExcelAdomdClientAssemblyPath}' - {e.Message}");
                 }
 
             }
@@ -85,5 +76,6 @@ namespace DaxStudio.ExcelAddin.Xmla
                 return m_excelAmoAssemblyPath;
             }
         }
+
     }
 }

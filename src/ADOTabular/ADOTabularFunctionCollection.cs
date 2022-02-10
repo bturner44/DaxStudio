@@ -1,36 +1,24 @@
 ﻿using System.Collections.Generic;
-using System.Data;
 using System.Collections;
+using System.Diagnostics.Contracts;
 
 namespace ADOTabular
 {
     public class ADOTabularFunctionCollection: IEnumerable<ADOTabularFunction>
     {
-        private Dictionary<string, ADOTabularFunction> _functions; 
+        private readonly SortedDictionary<string, ADOTabularFunction> _functions;
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0052:Remove unread private members", Justification = "<Pending>")]
         private readonly ADOTabularConnection _adoTabConn;
         public ADOTabularFunctionCollection(ADOTabularConnection adoTabConn)
         {
             _adoTabConn = adoTabConn;
-            _functions = new Dictionary<string, ADOTabularFunction>();
+            _functions = new SortedDictionary<string, ADOTabularFunction>();
         }
 
         public ADOTabularFunctionCollection()
         {
-            _functions = new Dictionary<string, ADOTabularFunction>();
+            _functions = new SortedDictionary<string, ADOTabularFunction>();
         }
-
-        /*
-        private DataSet _dsFuncs;
-        private DataSet GetFunctionsTable()
-        {
-            if (_dsFuncs == null)
-            {
-                _dsFuncs = _adoTabConn.GetSchemaDataSet("MDSCHEMA_FUNCTIONS");
-            }
-
-            return _dsFuncs;
-        }
-        */
 
         public int Count
         {
@@ -55,9 +43,11 @@ namespace ADOTabular
             return GetEnumerator();
         }
 
-        public void Add(ADOTabularFunction fun)
+        public void Add(ADOTabularFunction tabularFunc)
         {
-            _functions.Add(fun.Caption, fun);
+            Contract.Requires(tabularFunc != null, "The tabularFunc parameter must not be null");
+
+            _functions.Add(tabularFunc.Caption, tabularFunc);
         }
     }
 }

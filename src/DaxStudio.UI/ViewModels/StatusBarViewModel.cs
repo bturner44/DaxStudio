@@ -3,43 +3,31 @@ using System.ComponentModel.Composition;
 using System.Globalization;
 using ADOTabular;
 using Caliburn.Micro;
+using DaxStudio.Interfaces;
 using DaxStudio.UI.Events;
 using DaxStudio.UI.Utils;
+using Serilog;
 
 namespace DaxStudio.UI.ViewModels
 {
     [Export(typeof(StatusBarViewModel))]
     public class StatusBarViewModel:PropertyChangedBase
-        //, IHandle<StatusBarMessageEvent>
         , IHandle<EditorPositionChangedMessage>
         , IHandle<DocumentConnectionUpdateEvent>
-        //, IHandle<UpdateTimerTextEvent>
+        , IHandle<ConnectionClosedEvent>
         , IHandle<ActivateDocumentEvent>
     {
-        //private ADOTabularConnection _connection;
+        
         [ImportingConstructor]
-        public StatusBarViewModel(IEventAggregator eventAggregator)
+        public StatusBarViewModel(IEventAggregator eventAggregator, IGlobalOptions options)
         {
-            eventAggregator.Subscribe(this);
+            _eventAggregator = eventAggregator;
+            _eventAggregator.Subscribe(this);
+            Options = options;
         }
 
         public bool Working { get; set; }
 
-        /*private void ConnectionOnConnectionChanged(object sender, EventArgs eventArgs)
-        {
-            NotifyOfPropertyChange(()=> ServerName);
-            NotifyOfPropertyChange(()=> Spid);
-        }
-        */
-        /*
-        public void Handle(StatusBarMessageEvent message)
-        {
-            Message = message.Text;
-            Working = (Message != "Ready");
-            NotifyOfPropertyChange(()=> Message);
-            NotifyOfPropertyChange(() => Working);
-        }
-        */
         private string _message = "Ready";
         public string Message { 
             get { return _message; }
@@ -55,14 +43,26 @@ namespace DaxStudio.UI.ViewModels
             set
             {
                 _serverName = value;
-                NotifyOfPropertyChange(()=>ServerName); 
+                NotifyOfPropertyChange(()=>ServerName);
+                NotifyOfPropertyChange(() => CanCopyServerNameToClipboard);
             } }
+
+        private string _serverVersion = "";
+        public string ServerVersion
+        {
+            get { return string.IsNullOrWhiteSpace(_serverVersion) ? "" : _serverVersion; }
+            set
+            {
+                _serverVersion = value;
+                NotifyOfPropertyChange(() => ServerVersion);
+            }
+        }
 
         private string _spid = "";
         
         public string Spid 
         { 
-            get { return _spid == ""?"-":_spid; } 
+            get { return (_spid == "" || _spid== "0" )?"-":_spid; } 
             set { _spid = value;
                   NotifyOfPropertyChange(()=>Spid);
                 }
@@ -93,21 +93,39 @@ namespace DaxStudio.UI.ViewModels
                 if (message.Connection != null)
                 {
                     ServerName = message.Connection.IsPowerPivot?"<Power Pivot>": message.Connection.ServerName;
-                    Spid = message.Connection.Spid.ToString(CultureInfo.InvariantCulture);
+                    Spid = message.Connection.SPID.ToString(CultureInfo.InvariantCulture);
                 }
                 else
                 {
+                    
                     ServerName = "";
                     Spid = "";
                 }
             }
         }
 
-        //public void Handle(UpdateTimerTextEvent message)
-        //{
-        //    TimerText = message.TimerText;
-        //}
+        private int _rowCount = -1;
+        private IEventAggregator _eventAggregator;
 
+        public int RowCount
+        {
+            get { return _rowCount; }
+            set
+            {
+                _rowCount = value;
+                NotifyOfPropertyChange(() => Rows);
+            }
+        }
+        public string Rows
+        {
+            get { 
+                if (RowCount >= 0) { 
+                    return string.Format("{0} row{1}", RowCount, RowCount!=1?"s":""); } 
+                else { 
+                    return ""; 
+                } 
+            }
+        }
         public void Handle(ActivateDocumentEvent message)
         {
             if (message.Document == null ) return;
@@ -125,8 +143,10 @@ namespace DaxStudio.UI.ViewModels
             NotifyOfPropertyChange(() => ActiveDocument);
             Spid = ActiveDocument.Spid.ToString() ;
             ServerName = ActiveDocument.ServerName;
+            ServerVersion = ActiveDocument.ServerVersion;
             TimerText = ActiveDocument.ElapsedQueryTime;
             Message = ActiveDocument.StatusBarMessage;
+            RowCount = ActiveDocument.RowCount;
         }
 
         void ActiveDocument_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -137,17 +157,64 @@ namespace DaxStudio.UI.ViewModels
                     Message = ActiveDocument.StatusBarMessage;
                     break;
                 case "Spid":
-                    NotifyOfPropertyChange(() => Spid);
+                    Spid = ActiveDocument.Spid.ToString();
                     break;
                 case "ServerName":
-                    NotifyOfPropertyChange(() => ServerName);
+                    ServerName = ActiveDocument.ServerName;
+                    break;
+                case "ServerVersion":
+                    ServerVersion = ActiveDocument.ServerVersion;
                     break;
                 case "ElapsedQueryTime":
                     TimerText = ActiveDocument.ElapsedQueryTime;
                     break;
+                case "RowCount":
+                    RowCount = ActiveDocument.RowCount;
+                    break;
             }
         }
 
+        public bool CanCopyServerNameToClipboard { get => !string.IsNullOrWhiteSpace(_serverName);}
+        public void CopyServerNameToClipboard()
+        {
+            try
+            {
+                System.Windows.Clipboard.SetText(ServerName);
+                _eventAggregator.PublishOnUIThread(new OutputMessage(MessageType.Information, $"Copied Server Name: \"{ServerName}\" to clipboard"));
+            }
+            catch(Exception ex)
+            {
+                Log.Error(ex, "{class} {method} {message}", "StatusBarViewModel", "CopyServerNameToClipboard", "Error copying server name to clipboard: " + ex.Message);
+                _eventAggregator.PublishOnUIThread(new OutputMessage(MessageType.Error, "Error copying server name to clipboard, please try again"));
+            }
+        }
+
+
+        //public bool ShowDatabaseID { get => Options.ShowDatabaseIdStatus; }
+
+        //public bool CanCopyDatabaseIDToClipboard { get => !string.IsNullOrWhiteSpace(DatabaseID); }
+        //public void CopyDatabaseIdToClipboard()
+        //{
+        //    try
+        //    {
+        //        System.Windows.Clipboard.SetText(DatabaseID);
+        //        _eventAggregator.PublishOnUIThread(new OutputMessage(MessageType.Information, $"Copied Database ID: \"{DatabaseID}\" to clipboard"));
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        Log.Error(ex, "{class} {method} {message}", nameof(StatusBarViewModel), nameof(CopyDatabaseIdToClipboard), "Error copying DatabaseID to clipboard: " + ex.Message);
+        //        _eventAggregator.PublishOnUIThread(new OutputMessage(MessageType.Error, "Error copying DatabaseID to clipboard, please try again"));
+        //    }
+        //}
+
         public DocumentViewModel ActiveDocument { get; set; }
+        public IGlobalOptions Options { get; }
+
+        public void Handle(ConnectionClosedEvent message)
+        {
+            ServerName = string.Empty;
+        }
+
+
     }
 }

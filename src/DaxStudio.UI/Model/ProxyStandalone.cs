@@ -1,4 +1,5 @@
 ﻿using DaxStudio.Interfaces;
+using DaxStudio.UI.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -49,11 +50,12 @@ namespace DaxStudio.UI.Model
             throw new NotImplementedException();
         }
 
-        public ADOTabular.ADOTabularConnection GetPowerPivotConnection()
+        public ADOTabular.ADOTabularConnection GetPowerPivotConnection(string connectionType, string additionalsettings)
         {
             throw new NotImplementedException();
         }
 
+        public int Port { get { return 0; } }
         public void Dispose()
         {
             

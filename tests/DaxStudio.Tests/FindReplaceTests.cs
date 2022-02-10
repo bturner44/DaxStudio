@@ -1,8 +1,10 @@
 ﻿using System;
 using DaxStudio.UI.ViewModels;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using DAXEditor;
+using DAXEditorControl;
 using ICSharpCode.AvalonEdit.Document;
+using DaxStudio.Tests.Mocks;
+using Caliburn.Micro;
 
 namespace DaxStudio.Tests
 {
@@ -10,19 +12,25 @@ namespace DaxStudio.Tests
     public class FindReplaceTests
     {
         private MockEditor ed;
-        private FindReplaceDialogViewModel vm;
+        private IEventAggregator mockEventAggregator;
+        
         [TestInitialize]
         public void Init() {
             ed = new MockEditor("This is some sample text\non 3 different lines\nwith more samples");
-            
+            mockEventAggregator = new MockEventAggregator();
         }
+
+        
 
         [TestMethod]
         public void FindCaseInsensitive()
         {
-            vm = new FindReplaceDialogViewModel(ed);
-            vm.TextToFind = "SAMPLE";
-            vm.CaseSensitive = false;
+            var vm = new FindReplaceDialogViewModel(mockEventAggregator)
+            {
+                Editor = ed,
+                TextToFind = "SAMPLE",
+                CaseSensitive = false
+            };
             vm.FindText();
             Assert.AreEqual(13, ed.SelectionStart);
             Assert.AreEqual(6, ed.SelectionLength);
@@ -31,15 +39,20 @@ namespace DaxStudio.Tests
         [TestMethod]
         public void FindCaseSensitive()
         {
-            vm = new FindReplaceDialogViewModel(ed);
-            vm.TextToFind = "SAMPLE";
-            vm.CaseSensitive = true;
+            var vm = new FindReplaceDialogViewModel(mockEventAggregator)
+            {
+                Editor = ed,
+                TextToFind = "SAMPLE",
+                CaseSensitive = true,
+                UseRegex = false,
+                UseWildcards = false
+            };
             vm.FindText();
             Assert.AreEqual(0, ed.SelectionStart, "Selection Start");
             Assert.AreEqual(0, ed.SelectionLength, "Selection Length");
 
             vm.TextToFind = "sample";
-            vm.CaseSensitive = true;
+            
             vm.FindText();
             Assert.AreEqual(13, ed.SelectionStart, "Selection Start");
             Assert.AreEqual(6, ed.SelectionLength, "Selection Length");
@@ -48,20 +61,61 @@ namespace DaxStudio.Tests
         [TestMethod]
         public void FindWildcard()
         {
-            vm = new FindReplaceDialogViewModel(ed);
-            vm.UseWildcards = true;
-            vm.TextToFind = "sam*";
-            vm.FindText();
-            Assert.AreEqual(13, ed.SelectionStart, "Selection Start");
-            Assert.AreEqual(11, ed.SelectionLength, "Selection Length");
+
+            var newEd = new MockEditor("This is some sample text\non 3 different lines\nwith more samples");
+            var vm2 = new FindReplaceDialogViewModel(mockEventAggregator)
+            {
+                Editor = newEd,
+                UseWildcards = true,
+                UseRegex = false,
+                CaseSensitive = false,
+                TextToFind = "sam* "
+            };
+
+            vm2.FindText();
+
+            Assert.AreEqual(13, newEd.SelectionStart, "Selection Start");
+            Assert.AreEqual(7, newEd.SelectionLength, "Selection Length");
+        }
+
+        [TestMethod]
+        public void FindWildcardWithFullWords()
+        {
+
+            var newEd = new MockEditor("This is some sample text\non 3 different lines\nwith more samples");
+            var vm2 = new FindReplaceDialogViewModel(mockEventAggregator)
+            {
+                Editor = newEd,
+                UseWildcards = true,
+                UseRegex = false,
+                CaseSensitive = false,
+                UseWholeWord = true,
+                TextToFind = "sam*"
+            };
+
+            vm2.FindText();
+
+            Assert.AreEqual(13, newEd.SelectionStart, "Selection Start First");
+            Assert.AreEqual(6, newEd.SelectionLength, "Selection Length First");
+
+            vm2.FindNext();
+
+            Assert.AreEqual(56, newEd.SelectionStart, "Selection Start Next");
+            Assert.AreEqual(7, newEd.SelectionLength, "Selection Length Next");
+
         }
 
         [TestMethod]
         public void FindRegEx()
         {
-            vm = new FindReplaceDialogViewModel(ed);
-            vm.UseRegex = true;
-            vm.TextToFind = "sam[^\\s]*";
+            var vm = new FindReplaceDialogViewModel(mockEventAggregator)
+            {
+                Editor = ed,
+                UseRegex = true,
+                UseWildcards = false,
+                CaseSensitive = false,
+                TextToFind = "sam[^\\s]*"
+            };
             vm.FindText();
             Assert.AreEqual(13, ed.SelectionStart, "Selection Start");
             Assert.AreEqual(6, ed.SelectionLength, "Selection Length");
@@ -76,15 +130,22 @@ namespace DaxStudio.Tests
         [TestMethod]
         public void ReplaceTest()
         {
-            vm = new FindReplaceDialogViewModel(ed);
-            vm.UseRegex = true;
-            vm.TextToFind = "sam[^\\s]*";
-            vm.TextToReplace = "hello";
+            // need to ceatea a new editor for replaces tests as they change the text
+            var localEditor = new MockEditor("This is some sample text\non 3 different lines\nwith more samples");
+            var vm = new FindReplaceDialogViewModel(mockEventAggregator)
+            {
+                Editor = localEditor,
+                UseRegex = true,
+                UseWildcards = false,
+                CaseSensitive = false,
+                TextToFind = "sam[^\\s]*",
+                TextToReplace = "hello"
+            };
             vm.FindText();
             vm.ReplaceText();
 
             Assert.AreEqual("This is some hello text\non 3 different lines\nwith more samples",
-                ed.Text,
+                localEditor.Text,
                 "Replacement Text");
 
         }
@@ -92,74 +153,27 @@ namespace DaxStudio.Tests
         [TestMethod]
         public void ReplaceAllTest()
         {
-            vm = new FindReplaceDialogViewModel(ed);
-            vm.UseRegex = true;
-            vm.TextToFind = "sam[^\\s]*";
-            vm.TextToReplace = "hello";
+            var localEditor = new MockEditor("This is some sample text\non 3 different lines\nwith more samples");
+            var vm = new FindReplaceDialogViewModel(mockEventAggregator)
+            {
+                // need to ceatea a new editor for replaces tests as they change the text
+                Editor = localEditor,
+                UseRegex = true,
+                UseWildcards = false,
+                CaseSensitive = false,
+                TextToFind = "sam[^\\s]*",
+                TextToReplace = "hello"
+            };
             //vm.Find();
             vm.ReplaceAllText();
 
             Assert.AreEqual("This is some hello text\non 3 different lines\nwith more hello",
-                ed.Text,
+                localEditor.Text,
                 "Replacement Text");
 
         }
 
     }
 
-    public class MockEditor: IEditor
-    {
-        string _text = "";
-        public MockEditor(string sampleText)
-        {
-            _text = sampleText;
-        }
-
-        public string Text { get { return _text; }
-        }
-        
-        public int SelectionStart { get; private set; }
-
-        public int SelectionLength { get; private set; }
-
-        public string Selection { get { return _text.Substring(SelectionStart, SelectionLength); } }
-
-        public void BeginChange()
-        {
-            System.Diagnostics.Debug.WriteLine("Editor.BeginChange Triggered");
-        }
-
-        public void EndChange()
-        {
-            System.Diagnostics.Debug.WriteLine("Editor.EndChange Triggered");
-        }
-
-        public void Select(int start, int length)
-        {
-            SelectionStart = start;
-            SelectionLength = length;
-        }
-
-        public void ScrollTo(int line, int col)
-        {
-            _line = line;
-            _col = col;
-        }
-        private int _line;
-        private int _col;
-        public int Line { get { return _line; } }
-        public int Column { get { return _col; } }
-
-        public ICSharpCode.AvalonEdit.Document.TextLocation DocumentGetLocation(int offset)
-        {
-            var lines = _text.Substring(offset).Split('\n');
-            TextLocation loc = new TextLocation( lines.Length , lines[(lines.Length - 1)].Length);
-            return loc;
-        }
-
-        public void DocumentReplace(int offset, int length, string newText)
-        {
-            _text = _text.Substring(0, offset) + newText + _text.Substring(offset + length);
-        }
-    }
+    
 }

@@ -1,15 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.ComponentModel.Composition;
-using System.Text;
-using ADOTabular;
-using DaxStudio;
-using DaxStudio.UI;
-using DaxStudio.Interfaces;
-using System.Data;
 using Caliburn.Micro;
-using DaxStudio.UI.Events;
-using Serilog;
+using System.Windows;
+using DaxStudio.Common;
+using DaxStudio.UI.Interfaces;
 
 namespace DaxStudio.Standalone
 {
@@ -18,52 +12,46 @@ namespace DaxStudio.Standalone
     public class DaxStudioHost 
         : IDaxStudioHost
     {
-        private int _port;
-        private IDaxStudioProxy _proxy;
-        private IEventAggregator _eventAggregator;
-        private string _commandLineFileName = string.Empty;
+        private readonly Application _app;
+
         //private UI.ViewModels.DocumentViewModel _activeDocument;
         [ImportingConstructor]
-        public DaxStudioHost(IEventAggregator eventAggregator)
+        public DaxStudioHost(IEventAggregator eventAggregator, Application app)
         {
-            _eventAggregator = eventAggregator;
-            string[] args = Environment.GetCommandLineArgs();
-            if (args.Length > 1)
+            _app = app;
+            Port = _app.Args().Port;
+
+            if (Port > 0)
             {
-                int.TryParse(args[1], out _port);
-            }
-            if (_port > 0)
+                Proxy = new DaxStudio.UI.Model.ProxyPowerPivot(eventAggregator, Port);
+            } else
             {
-                Log.Debug("{class} {method} {message} {port}", "DaxStudioHost", "ctor", "Constructing ProxyPowerPivot", _port);
-                _proxy = new DaxStudio.UI.Model.ProxyPowerPivot(_eventAggregator, _port);
-            }
-            else
-            {
-                // pass along commandline to UI
-                Log.Debug("{class} {method} {message}", "DaxStudioHost", "ctor", "constructing ProxyStandalone");
-                if (args.Length > 1) _commandLineFileName = args[1];
-                _proxy = new DaxStudio.UI.Model.ProxyStandalone();
+                Proxy = new DaxStudio.UI.Model.ProxyStandalone();
             }
         }
 
-        public bool IsExcel {
-            get { return _proxy.IsExcel; }
-        }
+        public bool IsExcel => Proxy.IsExcel;
 
-        public IDaxStudioProxy Proxy
-        {
-            get { return _proxy; }
-        }
+        public IDaxStudioProxy Proxy { get; }
 
-        public string CommandLineFileName
+        public string CommandLineFileName => _app.Args().FileName;
+
+        public int Port { get; }
+
+        public bool DebugLogging => (bool)_app.Args().LoggingEnabled;
+
+        protected virtual void Dispose(bool disposing)
         {
-            get { return _commandLineFileName; }
+            if (disposing)
+            {
+                Proxy?.Dispose();
+            }
         }
 
         public void Dispose()
         {
-            
+            Dispose(true);
+            GC.SuppressFinalize(this);
         }
-
     }
 }

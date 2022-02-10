@@ -1,6 +1,11 @@
 ﻿using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Net;
+using System.Threading.Tasks;
+using Caliburn.Micro;
+using DaxStudio.Tests.Mocks;
+using Moq;
+using DaxStudio.Interfaces;
 
 namespace DaxStudio.Tests
 {
@@ -9,7 +14,7 @@ namespace DaxStudio.Tests
     {
         
 
-        [TestMethod]
+        [TestMethod,Ignore]
         public void TestValidDax()
         {
             var uri = "http://www.daxformatter.com/api/daxformatter/DaxFormat";
@@ -52,13 +57,13 @@ namespace DaxStudio.Tests
             var reader = new System.IO.StreamReader(outStrm);
             var output = reader.ReadToEnd();
 
-            Assert.AreEqual("\"EVALUATE FILTER ( tatatata, blah[x] = 1 )\\r\\n\\r\\n\"", output);
+            Assert.AreEqual("\"EVALUATE\\r\\nFILTER ( tatatata, blah[x] = 1 )\\r\\n\"", output);
         }
 
-        [TestMethod]
-        public void TestInvalidDax()
+        [TestMethod,Ignore]
+        public void TestFormatInvalidDax()
         {
-            var uri = "http://www.daxformatter.com/api/daxformatter/DaxFormat";
+            //var uri = "http://www.daxformatter.com/api/daxformatter/DaxFormat";
             var uri2 = "http://daxtest02.azurewebsites.net/api/daxformatter/daxformat";
             var data = "{Dax:'evaluate values(tatatata', ListSeparator:',', DecimalSeparator:'.'}";
             var enc = System.Text.Encoding.UTF8;
@@ -83,8 +88,8 @@ namespace DaxStudio.Tests
             Assert.AreNotEqual("\"\"", output);
         }
 
-        [TestMethod]
-        public void TestInvalidDaxVerbose()
+        [TestMethod,Ignore]
+        public void TestFormatInvalidDaxVerbose()
         {
             var uri = "http://www.daxformatter.com/api/daxformatter/DaxrichFormatverbose";
             
@@ -144,20 +149,24 @@ namespace DaxStudio.Tests
             Assert.AreEqual(expected, output);
         }
 
-        [TestMethod]
-        public async void TestDaxFormatterProxyWithInvalidQuery()
+        [TestMethod,Ignore]
+        public void TestDaxFormatterProxyWithInvalidQuery()
         {
             var qry = "evaluate values(tatatata ";
             //var req = new DaxStudio.UI.Model.DaxFormatterRequest();
             //req.Dax = qry;
-
-            DaxStudio.UI.Model.DaxFormatterResult res = await DaxStudio.UI.Model.DaxFormatterProxy.FormatDaxAsync(qry);
+            var opt = new Mock<IGlobalOptions>();
+            opt.SetupGet(o => o.DaxFormatterRequestTimeout).Returns(10);
+            //var opt = new MockGlobalOptions() { DaxFormatterRequestTimeout = 10 };
+            var t = DaxStudio.UI.Model.DaxFormatterProxy.FormatDaxAsync(qry, null, opt.Object, new MockEventAggregator(), false );
+            t.Wait();
+            DaxStudio.UI.Model.DaxFormatterResult res = t.Result;
             Assert.AreEqual(0, res.FormattedDax.Length);
             Assert.AreEqual(1, res.errors.Count);
         }
 
-        [TestMethod]
-        public async void TestDaxFormatterProxyWithLongQuery()
+        [TestMethod,Ignore]
+        public async Task TestDaxFormatterProxyWithLongQuery()
         {
             var qry = @"
 EVALUATE
@@ -178,11 +187,53 @@ PATHCONTAINS(""BLACK|Blue|Multi"", 'Product'[Colour]))
 )
 ORDER BY 'SalesTerritory'[SalesTerritory Country] desc, 'Product'[Colour]
 ";
-            
-            DaxStudio.UI.Model.DaxFormatterResult res = await DaxStudio.UI.Model.DaxFormatterProxy.FormatDaxAsync(qry);
-            Assert.AreEqual(563, res.FormattedDax.Length, "Query length does not match");
+
+            var formattedQry = @"EVALUATE
+CALCULATETABLE (
+    ADDCOLUMNS (
+        GENERATE (
+            GENERATE (
+                VALUES ( 'SalesTerritory'[SalesTerritory Country] ),
+                VALUES ( 'Product'[Colour] )
+            ),
+            VALUES ( 'Reseller'[BusinessType] )
+        ),
+        ""Sales Amt"", [Sale Amt]
+    ),
+    'Date'[Calendar Year] = 2006,
+    FILTER (
+        VALUES ( 'Product'[Colour] ),
+        PATHCONTAINS ( ""BLACK|Blue|Multi"", 'Product'[Colour] )
+    )
+)
+ORDER BY
+    'SalesTerritory'[SalesTerritory Country] DESC,
+    'Product'[Colour]";
+            var opt = new Mock<IGlobalOptions>();
+            opt.SetupGet(o => o.DaxFormatterRequestTimeout).Returns(10);
+            DaxStudio.UI.Model.DaxFormatterResult res = await DaxStudio.UI.Model.DaxFormatterProxy.FormatDaxAsync(qry, null, opt.Object, new MockEventAggregator(), false );
+            Assert.AreEqual(569, res.FormattedDax.Length, "Query length does not match");
+            Assert.AreEqual(formattedQry, res.FormattedDax, "Formatted Query does not match expected format");
             Assert.IsNull(res.errors);
             
+        }
+
+        [TestMethod,Ignore]
+        public async Task TestBackslashEscaping()
+        {
+            var mockGlobalOptions = new Mock<IGlobalOptions>();
+            mockGlobalOptions.SetupGet(o => o.ProxyUseSystem).Returns(true);
+            //var mockGlobalOptions = new MockGlobalOptions() { ProxyUseSystem = true };
+            var mockEventAggregator = new MockEventAggregator();
+            //var webReqFac = new UI.Utils.WebRequestFactory(mockGlobalOptions, mockEventAggregator);
+            var webReqFac = await UI.Utils.WebRequestFactory.CreateAsync(mockGlobalOptions.Object, mockEventAggregator);
+            //var daxFmtProxy = IoC.BuildUp(webReqFac);
+            var qry = "EVALUATE FILTER(Customer, Customer[Username] = \"Test\\User\")" ;
+            var expectedQry = "EVALUATE\r\nFILTER ( Customer, Customer[Username] = \"Test\\User\" )";
+            var opt = new Mock<IGlobalOptions>();
+            opt.SetupGet(o => o.DaxFormatterRequestTimeout).Returns(10);
+            DaxStudio.UI.Model.DaxFormatterResult res = await DaxStudio.UI.Model.DaxFormatterProxy.FormatDaxAsync(qry, null, opt.Object, new MockEventAggregator(), false);
+            Assert.AreEqual(expectedQry, res.FormattedDax);
         }
     }
 }

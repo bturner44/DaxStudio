@@ -1,13 +1,21 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.Linq;
 using Caliburn.Micro;
 using DaxStudio.UI.Events;
 using DaxStudio.UI.Model;
-using Microsoft.AnalysisServices;
 using System.Text.RegularExpressions;
 using System.IO;
+using System.IO.Packaging;
+using System.Text;
+using System.Windows.Media;
 using Newtonsoft.Json;
+using DaxStudio.UI.Interfaces;
+using DaxStudio.QueryTrace;
+using DaxStudio.Interfaces;
+using DaxStudio.UI.Utils;
+using Serilog;
 
 namespace DaxStudio.UI.ViewModels
 {
@@ -24,18 +32,24 @@ namespace DaxStudio.UI.ViewModels
             Operation = line.Trim();
             IndentedOperation = new string(' ', Level * SPACE_PER_LEVEL) + Operation;
         }
-        static public BindableCollection<T> PrepareQueryPlan<T>(string physicalQueryPlan) 
-            where T : QueryPlanRow, new() {
-            int rowNumber = 0;
+        static public BindableCollection<T> PrepareQueryPlan<T>(string physicalQueryPlan,int startingRowNumber)
+            where T : QueryPlanRow, new()
+        {
+            int rowNumber = startingRowNumber;
             return new BindableCollection<T>((
                 from row in physicalQueryPlan.Split(new[] { '\r', '\n' })
                 where row.Trim().Length > 0
                 select row)
-            .Select( (line) => {
+            .Select((line) => {
                 var operation = new T();
                 operation.PrepareQueryPlanRow(line, ++rowNumber);
-                return operation; 
+                return operation;
             }).ToList());
+        }
+
+        static public BindableCollection<T> PrepareQueryPlan<T>(string physicalQueryPlan) 
+            where T : QueryPlanRow, new() {
+            return PrepareQueryPlan<T>(physicalQueryPlan, 0);
         }
     }
 
@@ -63,17 +77,17 @@ namespace DaxStudio.UI.ViewModels
     class QueryPlanTraceViewModel: TraceWatcherBaseViewModel, ISaveState
     {
         [ImportingConstructor]
-        public QueryPlanTraceViewModel(IEventAggregator eventAggregator) : base(eventAggregator)
+        public QueryPlanTraceViewModel(IEventAggregator eventAggregator, IGlobalOptions globalOptions) : base(eventAggregator, globalOptions)
         {
             _physicalQueryPlanRows = new BindableCollection<PhysicalQueryPlanRow>();
             _logicalQueryPlanRows = new BindableCollection<LogicalQueryPlanRow>();
         }
 
-        protected override List<TraceEventClass> GetMonitoredEvents()
+        protected override List<DaxStudioTraceEventClass> GetMonitoredEvents()
         {
-            return new List<TraceEventClass> 
-                { TraceEventClass.DAXQueryPlan
-                , TraceEventClass.QueryEnd };
+            return new List<DaxStudioTraceEventClass> 
+                { DaxStudioTraceEventClass.DAXQueryPlan
+                , DaxStudioTraceEventClass.QueryEnd };
         }
     
 
@@ -84,31 +98,38 @@ namespace DaxStudio.UI.ViewModels
 
             foreach (var traceEvent in Events)
             {
-                if (traceEvent.EventClass == TraceEventClass.DAXQueryPlan && traceEvent.EventSubclass == TraceEventSubclass.DAXVertiPaqLogicalPlan)
+                if (traceEvent.EventClass == DaxStudioTraceEventClass.DAXQueryPlan
+                    && traceEvent.EventSubclass == DaxStudioTraceEventSubclass.DAXVertiPaqLogicalPlan)
                 {
                     LogicalQueryPlanText = traceEvent.TextData;
                     PrepareLogicalQueryPlan(traceEvent.TextData);
                     NotifyOfPropertyChange(() => LogicalQueryPlanText);
                 }
-                if (traceEvent.EventClass == TraceEventClass.DAXQueryPlan && traceEvent.EventSubclass == TraceEventSubclass.DAXVertiPaqPhysicalPlan)
+                if (traceEvent.EventClass == DaxStudioTraceEventClass.DAXQueryPlan 
+                    && traceEvent.EventSubclass == DaxStudioTraceEventSubclass.DAXVertiPaqPhysicalPlan)
                 {
                     PhysicalQueryPlanText = traceEvent.TextData;
                     PreparePhysicalQueryPlan(traceEvent.TextData);
                     NotifyOfPropertyChange(() => PhysicalQueryPlanText);
                 }
-                if (traceEvent.EventClass == TraceEventClass.QueryEnd)
+                if (traceEvent.EventClass == DaxStudioTraceEventClass.QueryEnd)
                 {
                     TotalDuration = traceEvent.Duration;
                     NotifyOfPropertyChange(() => TotalDuration);
                 }
             }
+            NotifyOfPropertyChange(() => CanExport);
         }
 
-        public override void OnReset() { }
+        public override void OnReset() {
+            IsBusy = false;
+            ClearAll();
+            ProcessResults();
+        }
 
         protected void PreparePhysicalQueryPlan(string physicalQueryPlan) 
         {
-            _physicalQueryPlanRows = QueryPlanRow.PrepareQueryPlan<PhysicalQueryPlanRow>(physicalQueryPlan);
+            _physicalQueryPlanRows.AddRange( QueryPlanRow.PrepareQueryPlan<PhysicalQueryPlanRow>(physicalQueryPlan, _physicalQueryPlanRows.Count));
             NotifyOfPropertyChange(() => PhysicalQueryPlanRows);
         }
 
@@ -167,21 +188,33 @@ namespace DaxStudio.UI.ViewModels
         }
         
         // IToolWindow interface
-        public override string Title
-        {
-            get { return "Query Plan"; }
-            set { }
-        }
+        public override string Title => "Query Plan";
 
-        public override string ToolTipText
+        public override string ContentId => "query-plan";
+        public override ImageSource IconSource
         {
             get
             {
-                return "Runs a server trace to capture the Logical and Physical DAX Query Plans";
+                var imgSourceConverter = new ImageSourceConverter();
+                return imgSourceConverter.ConvertFromInvariantString(
+                    @"pack://application:,,,/DaxStudio.UI;component/images/icon-plan@17px.png") as ImageSource;
+
             }
-            set { }
         }
+
+        public override string ToolTipText => "Runs a server trace to capture the Logical and Physical DAX Query Plans";
+
+        public override bool FilterForCurrentSession { get { return true; } }
+
+        #region ISaveState Methods
+
         void ISaveState.Save(string filename)
+        {
+            string json = ((ISaveState)this).GetJson();
+            File.WriteAllText(filename + ".queryPlans", json);
+        }
+
+        public string GetJson()
         {
             var m = new QueryPlanModel()
             {
@@ -189,7 +222,7 @@ namespace DaxStudio.UI.ViewModels
                 LogicalQueryPlanRows = this.LogicalQueryPlanRows
             };
             var json = Newtonsoft.Json.JsonConvert.SerializeObject(m, Newtonsoft.Json.Formatting.Indented);
-            File.WriteAllText(filename + ".queryPlans", json);
+            return json;
         }
 
         void ISaveState.Load(string filename)
@@ -197,16 +230,81 @@ namespace DaxStudio.UI.ViewModels
             filename = filename + ".queryPlans";
             if (!File.Exists(filename)) return;
 
-            this.IsChecked = true;
+            _eventAggregator.PublishOnUIThread(new ShowTraceWindowEvent(this));
             string data = File.ReadAllText(filename);
+            LoadJson(data);
+        }
+
+        public void LoadJson(string data)
+        {
             QueryPlanModel m = JsonConvert.DeserializeObject<QueryPlanModel>(data);
 
             PhysicalQueryPlanRows = m.PhysicalQueryPlanRows;
             LogicalQueryPlanRows = m.LogicalQueryPlanRows;
 
-            
+
+            NotifyOfPropertyChange(() => PhysicalQueryPlanRows);
+            NotifyOfPropertyChange(() => LogicalQueryPlanRows);
+            NotifyOfPropertyChange(() => CanExport);
+        }
+
+        public void SavePackage(Package package)
+        {
+
+            Uri uriTom = PackUriHelper.CreatePartUri(new Uri(DaxxFormat.QueryPlan, UriKind.Relative));
+            using (TextWriter tw = new StreamWriter(package.CreatePart(uriTom, "application/json", CompressionOption.Maximum).GetStream(), Encoding.UTF8))
+            {
+                tw.Write(((ISaveState)this).GetJson());
+                tw.Close();
+            }
+        }
+
+        public void LoadPackage(Package package)
+        {
+            var uri = PackUriHelper.CreatePartUri(new Uri(DaxxFormat.QueryPlan, UriKind.Relative));
+            if (!package.PartExists(uri)) return;
+
+            _eventAggregator.PublishOnUIThread(new ShowTraceWindowEvent(this));
+            var part = package.GetPart(uri);
+            using (TextReader tr = new StreamReader(part.GetStream()))
+            {
+                string data = tr.ReadToEnd();
+                LoadJson(data);
+            }
+
+        }
+        #endregion
+
+        #region Title Bar Button Methods
+
+        public override void ClearAll()
+        {
+            Events.Clear();
+            _physicalQueryPlanRows.Clear();
+            _logicalQueryPlanRows.Clear();
             NotifyOfPropertyChange(() => PhysicalQueryPlanRows);
             NotifyOfPropertyChange(() => LogicalQueryPlanRows);
         }
+
+        public override void CopyAll()
+        {
+            Log.Warning("CopyAll method not implemented for QueryPlanTraceViewModel");
+        }
+
+        public override void CopyResults()
+        {
+            // QueryPlan does not support this operation
+            throw new NotImplementedException();
+        }
+
+        #endregion
+
+        public override bool CanExport => _logicalQueryPlanRows.Count > 0;
+
+        public override void ExportTraceDetails(string filePath)
+        {
+            File.WriteAllText(filePath, GetJson());
+        }
+
     }
 }

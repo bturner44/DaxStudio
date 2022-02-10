@@ -40,6 +40,7 @@
             this.btnTest = this.Factory.CreateRibbonButton();
             this.tab1.SuspendLayout();
             this.group1.SuspendLayout();
+            this.SuspendLayout();
             // 
             // tab1
             // 
@@ -60,10 +61,14 @@
             this.btnDax.Image = global::DaxStudio.Properties.Resources.daxstudio_logo_32x32;
             this.btnDax.Label = "DAX Studio";
             this.btnDax.Name = "btnDax";
-            this.btnDax.ScreenTip = "Exectute DAX query";
+            this.btnDax.ScreenTip = "Launch DAX Studio";
             this.btnDax.ShowImage = true;
             this.btnDax.Click += new Microsoft.Office.Tools.Ribbon.RibbonControlEventHandler(this.BtnDaxClick);
-            
+            // 
+            // btnTest
+            // 
+            this.btnTest.Label = "";
+            this.btnTest.Name = "btnTest";
             // 
             // DaxStudioRibbon
             // 
@@ -76,6 +81,7 @@
             this.tab1.PerformLayout();
             this.group1.ResumeLayout(false);
             this.group1.PerformLayout();
+            this.ResumeLayout(false);
 
         }
 

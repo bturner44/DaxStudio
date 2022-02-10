@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using DaxStudio.Interfaces;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-
+using Moq;
 
 namespace DaxStudio.Tests
 {
@@ -16,7 +17,9 @@ namespace DaxStudio.Tests
         {
             Caliburn.Micro.IEventAggregator stubEventAgg = new Caliburn.Micro.EventAggregator();
             var stubVerChk = new VersionCheckMock();
-            var hlp = new DaxStudio.UI.ViewModels.HelpAboutViewModel(stubEventAgg,stubVerChk );
+            var stubHost = new Mocks.MockDaxStudioHost();
+            var mockOptions = new Mock<IGlobalOptions>().Object;
+            var hlp = new DaxStudio.UI.ViewModels.HelpAboutViewModel(stubEventAgg,stubVerChk, stubHost, mockOptions  );
             var ra = hlp.ReferencedAssemblies;
             Assert.IsTrue(ra.Count >= 32);
         }
@@ -25,7 +28,9 @@ namespace DaxStudio.Tests
         {
             Caliburn.Micro.IEventAggregator stubEventAgg = new Caliburn.Micro.EventAggregator();
             var stubVerChk = new VersionCheckMock();
-            var hlp = new DaxStudio.UI.ViewModels.HelpAboutViewModel(stubEventAgg,stubVerChk);
+            var stubHost = new Mocks.MockDaxStudioHost();
+            var mockOptions = new Mock<IGlobalOptions>().Object;
+            var hlp = new DaxStudio.UI.ViewModels.HelpAboutViewModel(stubEventAgg,stubVerChk, stubHost, mockOptions);
             var ra = hlp.ReferencedAssemblies;
             foreach (var a in ra)
             {
@@ -38,6 +43,7 @@ namespace DaxStudio.Tests
 
     public class VersionCheckMock: DaxStudio.Interfaces.IVersionCheck
     {
+        
         public void CheckVersion()
         {
             throw new NotImplementedException();
@@ -87,11 +93,23 @@ namespace DaxStudio.Tests
             get { throw new NotImplementedException(); }
         }
 
+        public Uri DownloadUrl
+        {
+            get
+            {
+                throw new NotImplementedException();
+            }
+        }
+
         public void Update()
         {
             throw new NotImplementedException();
         }
-
+#pragma warning disable 0067
+        // required for implementing the interface, but not used for these tests
         public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+        public event EventHandler UpdateCompleteCallback;
+        public event EventHandler UpdateStartingCallback;
+#pragma warning restore 0067
     }
 }

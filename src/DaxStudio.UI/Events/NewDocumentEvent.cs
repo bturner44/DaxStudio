@@ -1,4 +1,6 @@
-﻿using DaxStudio.UI.Model;
+﻿using DaxStudio.UI.Interfaces;
+using DaxStudio.UI.Model;
+using DaxStudio.UI.ViewModels;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,6 +16,12 @@ namespace DaxStudio.UI.Events
             _target = target;
         }
 
+        public NewDocumentEvent(IResultsTarget target, DocumentViewModel activeDocument)
+        {
+            _target = target;
+            ActiveDocument = activeDocument;
+        }
+
         public IResultsTarget Target
         {
             get
@@ -21,6 +29,8 @@ namespace DaxStudio.UI.Events
                 return _target;
             }
         }
+        public string FileName { get; set; }
+        public DocumentViewModel ActiveDocument { get; private set; }
 
     }
 }
