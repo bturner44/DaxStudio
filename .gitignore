@@ -201,3 +201,4 @@ github.env
 /src/.vs/DaxStudio/v15/Server/sqlite3
 docs/.jekyll-metadata
 *.GeneratedMSBuildEditorConfig.editorconfig
+installer/DaxStudio.code-workspace.gettingclose.code-workspace
