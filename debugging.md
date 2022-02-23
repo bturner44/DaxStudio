@@ -19,7 +19,7 @@ The DAX Studio solution is broken up into a number of different projects
 
 ## DaxStudio.UI
 
-This is the core project that contains all of the User Interface. It uses [Caliburn.Micro](https://caliburnmicro.com) to implement the MVVM pattern and is using MEF as a sort of light-weight IoC container. 
+This is the core project that contains all of the User Interface. It uses [Caliburn.Micro](https://caliburnmicro.com) to implement the MVVM pattern and is using MEF as a sort of light-weight IoC container.
 
 ### Application Startup Flow
 
@@ -29,7 +29,7 @@ This is the core project that contains all of the User Interface. It uses [Calib
 1. Then the `OnStartup` method is called which creates a `ShellViewModel` object
 1. The `ShellViewModel` then gets a `RibbonViewModel` and `StatusBarViewModel` from MEF
 1. The `RibbonViewModel` then gets a `DocumentTabViewModel` from MEF (this represents the collection of open documents)
-1. The `DocumentTabViewModel` will then create a new `DocumentViewModel` 
+1. The `DocumentTabViewModel` will then create a new `DocumentViewModel`
 1. The `DocumentViewModel` is the core part of the application, it will create a collection of toolwindows including:
     - `MetadataPaneViewModel`
     - `DmvPaneViewModel`
